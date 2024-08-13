@@ -1,8 +1,10 @@
 const express = require('express');
 const path = require('path');
 const mysql = require('mysql2');
+const cors = require('cors');
 const app = express();
 app.use(express.json());
+app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 //app.get('/edit-transacao/:id', (req, res) => {
