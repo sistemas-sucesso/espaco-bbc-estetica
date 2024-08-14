@@ -3,16 +3,15 @@ const path = require('path');
 const mysql = require('mysql2');
 const cors = require('cors');
 const app = express();
+
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.static(path.join(__dirname, 'systems', 'public')));
+
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
-//app.get('/edit-transacao/:id', (req, res) => {
-  //  res.sendFile(path.join(__dirname, 'public', 'views', 'edit.html'));
-//});
-let transacoes = [];
 
-//app.use(express.json());
 const db = mysql.createConnection({
     host: 'b9lsqlxrc1wrcggnqosi-mysql.services.clever-cloud.com',
     user: 'ugcnyroeqou4hr6n',
@@ -22,149 +21,110 @@ const db = mysql.createConnection({
 
 db.connect(err => {
     if (err) throw err;
-    console.log('Conectado ao banco de dados com sucesso.');
+    console.log('Conectado ao banco de dados.');
 });
 
-
-
-app.get('/api/dados', (req, res) => {
-    const query = `
+// Rota para obter os dados dos barbeiros e suas transações
+app.get('/', (req, res) => {
+    const queryBarbeiros = `
         SELECT
-            id,
-            tipo,
-            forma_pagamento,
-            valor,
-            NOME_DO_ITEM,
-            DATE_FORMAT(data, '%Y-%m-%d') AS data,
-            SUM(CASE WHEN tipo = 'entrada' AND fechado = FALSE THEN valor ELSE 0 END) AS total_entrada,
-            SUM(CASE WHEN tipo = 'saida' AND fechado = FALSE THEN valor ELSE 0 END) AS total_saida,
-            (SUM(CASE WHEN tipo = 'entrada' AND fechado = FALSE THEN valor ELSE 0 END) - SUM(CASE WHEN tipo = 'saida' AND fechado = FALSE THEN valor ELSE 0 END)) AS saldo,
-            SUM(CASE WHEN tipo = 'entrada' AND DATE(data) = CURDATE() AND fechado = FALSE THEN valor ELSE 0 END) AS total_entrada_dia,
-            SUM(CASE WHEN tipo = 'saida' AND DATE(data) = CURDATE() AND fechado = FALSE THEN valor ELSE 0 END) AS total_saida_dia,
-            SUM(CASE WHEN tipo = 'entrada' AND WEEK(data) = WEEK(CURDATE()) AND fechado = FALSE THEN valor ELSE 0 END) AS total_entrada_semana,
-            SUM(CASE WHEN tipo = 'saida' AND WEEK(data) = WEEK(CURDATE()) AND fechado = FALSE THEN valor ELSE 0 END) AS total_saida_semana,
-            SUM(CASE WHEN tipo = 'entrada' AND MONTH(data) = MONTH(CURDATE()) AND fechado = FALSE THEN valor ELSE 0 END) AS total_entrada_mes,
-            SUM(CASE WHEN tipo = 'saida' AND MONTH(data) = MONTH(CURDATE()) AND fechado = FALSE THEN valor ELSE 0 END) AS total_saida_mes
-        FROM transacoes;
+            b.id AS id, 
+            b.nome AS nome,
+            SUM(CASE WHEN t.tipo = 'entrada' THEN t.valor ELSE 0 END) * 0.3 AS total_entrada,
+            SUM(CASE WHEN t.tipo = 'saida' THEN t.valor ELSE 0 END) AS total_saida,
+            (SUM(CASE WHEN t.tipo = 'entrada' THEN t.valor ELSE 0 END) * 0.3) - SUM(CASE WHEN t.tipo = 'saida' THEN t.valor ELSE 0 END) AS saldo,
+            SUM(CASE WHEN t.tipo = 'entrada' AND DATE(t.data) = CURDATE() THEN t.valor ELSE 0 END) * 0.3 AS total_entrada_dia,
+            SUM(CASE WHEN t.tipo = 'saida' AND DATE(t.data) = CURDATE() THEN t.valor ELSE 0 END) AS total_saida_dia,
+            SUM(CASE WHEN t.tipo = 'entrada' AND WEEK(t.data) = WEEK(CURDATE()) THEN t.valor ELSE 0 END) * 0.3 AS total_entrada_semana,
+            SUM(CASE WHEN t.tipo = 'saida' AND WEEK(t.data) = WEEK(CURDATE()) THEN t.valor ELSE 0 END) AS total_saida_semana,
+            SUM(CASE WHEN t.tipo = 'entrada' AND MONTH(t.data) = MONTH(CURDATE()) THEN t.valor ELSE 0 END) * 0.3 AS total_entrada_mes,
+            SUM(CASE WHEN t.tipo = 'saida' AND MONTH(t.data) = MONTH(CURDATE()) THEN t.valor ELSE 0 END) AS total_saida_mes
+        FROM barbeiros b
+        LEFT JOIN transacao t ON t.barbeiro_id = b.id
+        GROUP BY b.id, b.nome;
     `;
 
-    db.query(query, (err, result) => {
+    db.query(queryBarbeiros, (err, resultBarbeiros) => {
         if (err) throw err;
-
-        const saldo = parseFloat(result[0].saldo) || 0;
-        const total_entrada = parseFloat(result[0].total_entrada) || 0;
-        const total_saida = parseFloat(result[0].total_saida) || 0;
-        const total_entrada_dia = parseFloat(result[0].total_entrada_dia) || 0;
-        const total_saida_dia = parseFloat(result[0].total_saida_dia) || 0;
-        const total_entrada_semana = parseFloat(result[0].total_entrada_semana) || 0;
-        const total_saida_semana = parseFloat(result[0].total_saida_semana) || 0;
-        const total_entrada_mes = parseFloat(result[0].total_entrada_mes) || 0;
-        const total_saida_mes = parseFloat(result[0].total_saida_mes) || 0;
-
+        console.log("Resultado dos Barbeiros:", resultBarbeiros);
         const queryTransacoes = `
             SELECT
-                id, tipo, forma_pagamento, valor, NOME_DO_ITEM,
-                DATE_FORMAT(data, '%Y-%m-%d') AS data
-            FROM transacoes;
+                t.id, t.tipo, t.forma_pagamento, t.valor, t.nome_do_item,
+                DATE_FORMAT(t.data, '%Y-%m-%d') AS data, t.barbeiro_id, b.nome AS barbeiro
+            FROM transacao t
+            JOIN barbeiros b ON t.barbeiro_id = b.id;
         `;
-
+        
         db.query(queryTransacoes, (err, transacoes) => {
             if (err) throw err;
-            res.json({
-                saldo,
-                total_entrada,
-                total_saida,
-                total_entrada_dia,
-                total_saida_dia,
-                total_entrada_semana,
-                total_saida_semana,
-                total_entrada_mes,
-                total_saida_mes,
-                transacoes
+            console.log("Resultado das Transações:", queryTransacoes);
+            console.log("Resultado das Transações:", transacoes);
+            const queryRelatorio = `
+                SELECT 
+                    SUM(CASE WHEN t.tipo = 'entrada' THEN t.valor ELSE 0 END) AS total_entrada,
+                    SUM(CASE WHEN t.tipo = 'saida' THEN t.valor ELSE 0 END) AS total_saida,
+                    SUM(CASE WHEN t.tipo = 'entrada' AND DATE(t.data) = CURDATE() THEN t.valor ELSE 0 END) AS total_entrada_dia,
+                    SUM(CASE WHEN t.tipo = 'saida' AND DATE(t.data) = CURDATE() THEN t.valor ELSE 0 END) AS total_saida_dia,
+                    SUM(CASE WHEN t.tipo = 'entrada' AND WEEK(t.data) = WEEK(CURDATE()) THEN t.valor ELSE 0 END) AS total_entrada_semana,
+                    SUM(CASE WHEN t.tipo = 'saida' AND WEEK(t.data) = WEEK(CURDATE()) THEN t.valor ELSE 0 END) AS total_saida_semana,
+                    SUM(CASE WHEN t.tipo = 'entrada' AND MONTH(t.data) = MONTH(CURDATE()) THEN t.valor ELSE 0 END) AS total_entrada_mes,
+                    SUM(CASE WHEN t.tipo = 'saida' AND MONTH(t.data) = MONTH(CURDATE()) THEN t.valor ELSE 0 END) AS total_saida_mes
+                FROM transacao t;
+            `;
+
+            db.query(queryRelatorio, (err, resultRelatorio) => {
+                if (err) throw err;
+                res.render('app', {
+                    barbeiros: resultBarbeiros,
+                    transacoes: transacoes,
+                    relatorio: resultRelatorio[0]
+                });
             });
         });
     });
 });
 
-app.post('/add-transacao', (req, res) => {
-    const { tipo, valor, data, forma_pagamento, nome_do_item } = req.body;
-    const query = 'INSERT INTO transacoes (tipo, valor, data, forma_pagamento, NOME_DO_ITEM, fechado) VALUES (?, ?, ?, ?, ?, FALSE)';
-    db.query(query, [tipo, valor, data, forma_pagamento, nome_do_item], (err, result) => {
+// Rota para adicionar uma nova transação
+app.post('/transacao', (req, res) => {
+    const { tipo, valor, data, forma_pagamento, nome_do_item, barbeiro_id } = req.body;
+    const query = 'INSERT INTO transacao (tipo, valor, data, forma_pagamento, nome_do_item, barbeiro_id) VALUES (?, ?, ?, ?, ?, ?)';
+    
+    db.query(query, [tipo, valor, data, forma_pagamento, nome_do_item, barbeiro_id], (err, result) => {
         if (err) {
-            res.status(500).json({ error: 'Erro ao adicionar transação' });
-        } else {
-            res.status(201).json({
-                id: result.insertId,
-                tipo,
-                valor,
-                data,
-                forma_pagamento,
-                nome_do_item
-            });
+            console.error(err);
+            return res.status(500).send('Erro ao inserir transação.');
         }
-    });
-});
-// Rota para buscar uma transação por ID
-app.get('/api/transacoes/:id', (req, res) => {
-    const { id } = req.params;
-    console.log('ID recebido para busca:', id); // Verificar se o ID está sendo passado corretamente
-
-    const query = 'SELECT id, tipo, valor, data, forma_pagamento, NOME_DO_ITEM FROM transacoes WHERE id = ?';
-    db.query(query, [id], (err, result) => {
-        if (err) {
-            console.error('Erro ao buscar transação:', err); // Logar o erro se ocorrer
-            return res.status(500).json({ error: 'Erro ao buscar transação' });
-        }
-
-        console.log('Resultado da busca:', result); // Verificar o resultado da busca
-
-        if (result.length === 0) {
-            return res.status(404).json({ error: 'Transação não encontrada' });
-        }
-
-        res.json(result[0]);
-    });
-});
-
-// Rota para atualizar uma transação
-app.post('/update-transacao', (req, res) => {
-    const { id, nome_do_item, tipo, valor, data, forma_pagamento } = req.body;
-    console.log('Dados recebidos para atualização:', req.body); // Verificar os dados recebidos
-
-    if (!id || !nome_do_item || !tipo || !valor || !data || !forma_pagamento) {
-        console.warn('Dados incompletos:', req.body); // Logar se houver dados faltando
-        return res.status(400).json({ error: 'Dados incompletos' });
-    }
-
-    const query = 'UPDATE transacoes SET tipo = ?, valor = ?, data = ?, forma_pagamento = ?, NOME_DO_ITEM = ? WHERE id = ?';
-    db.query(query, [tipo, valor, data, forma_pagamento, nome_do_item, id], (err, result) => {
-        if (err) {
-            console.error('Erro ao atualizar transação:', err); // Logar o erro se ocorrer
-            return res.status(500).json({ error: 'Erro ao atualizar transação' });
-        }
-
-        console.log('Resultado da atualização:', result); // Verificar o resultado da atualização
-
-        if (result.affectedRows === 0) {
-            console.warn('Transação não encontrada para atualizar. ID:', id); // Logar se não encontrar a transação
-            return res.status(404).json({ error: 'Transação não encontrada' });
-        }
-
-        res.status(200).json({ success: 'Transação atualizada com sucesso' });
-    });
-});
-
-
-app.post('/delete-transacao', (req, res) => {
-    const { id } = req.body;
-    const query = 'DELETE FROM transacoes WHERE id = ?';
-    db.query(query, [id], (err, result) => {
-        if (err) throw err;
         res.redirect('/');
     });
 });
 
-app.listen(3000, () => {
-    console.log('Servidor rodando na porta 3000');
+// Rota para editar uma transação existente
+app.post('/update-transacao', (req, res) => {
+    const { id, nome_do_item, tipo, valor, data, forma_pagamento, barbeiro_id } = req.body;
+    const query = 'UPDATE transacao SET tipo = ?, valor = ?, data = ?, forma_pagamento = ?, nome_do_item = ?, barbeiro_id = ? WHERE id = ?';
+    db.query(query, [tipo, valor, data, forma_pagamento, nome_do_item, barbeiro_id, id], (err, result) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).send('Erro ao editar transação.');
+        }
+        res.redirect('/');
+    });
+});
+
+// Rota para deletar uma transação
+app.post('/delete-transacao', (req, res) => {
+    const { id } = req.body;
+    const query = 'DELETE FROM transacao WHERE id = ?';
+    db.query(query, [id], (err, result) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).send('Erro ao deletar transação.');
+        }
+        res.redirect('/');
+    });
+});
+
+app.listen(3001, () => {
+    console.log('Servidor rodando na porta 3001');
 });
 
